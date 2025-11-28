@@ -1,4 +1,12 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    
+    <!-- Permissions pour passer des appels téléphoniques -->
+    <uses-permission android:name="android.permission.CALL_PHONE"/>
+    
+    <!-- Permissions pour la localisation -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    
     <application
         android:label="sos_app"
         android:name="${applicationName}"
@@ -25,6 +33,7 @@
             android:name="flutterEmbedding"
             android:value="2" />
     </application>
+    
     <queries>
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>

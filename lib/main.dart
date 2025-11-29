@@ -41,7 +41,7 @@ class _SOSHomePageState extends State<SOSHomePage> {
   bool _isPlayingAlarm = false;
   
   // Variables pour la carte
-  late MapController _mapController;
+  MapController? _mapController;
   double? _currentLat;
   double? _currentLng;
   Set<Marker> _markers = {};
@@ -197,10 +197,12 @@ class _SOSHomePageState extends State<SOSHomePage> {
         );
         
         // Centrer la carte sur la position
-        _mapController.move(
-          LatLng(position.latitude, position.longitude),
-          15.0,
-        );
+        if (_mapController != null) {
+          _mapController!.move(
+            LatLng(position.latitude, position.longitude),
+            15.0,
+          );
+        }
         
         _isLoading = false;
       });
@@ -385,76 +387,43 @@ class _SOSHomePageState extends State<SOSHomePage> {
                             ],
                           ),
                         )
-                      : FlutterMap(
-                          mapController: _mapController,
-                          options: MapOptions(
-                            center: LatLng(_currentLat!, _currentLng!),
-                            zoom: 15.0,
-                          ),
-                          children: [
-                            TileLayer(
-                              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                              userAgentPackageName: 'com.example.sos_app',
+                      : _mapController != null
+                          ? FlutterMap(
+                              mapController: _mapController!,
+                              options: MapOptions(
+                                center: LatLng(_currentLat!, _currentLng!),
+                                zoom: 15.0,
+                              ),
+                              children: [
+                                TileLayer(
+                                  urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                  userAgentPackageName: 'com.example.sos_app',
+                                ),
+                                MarkerLayer(
+                                  markers: _markers.toList(),
+                                ),
+                              ],
+                            )
+                          : const Center(
+                              child: Text('Carte non disponible'),
                             ),
-                            MarkerLayer(
-                              markers: _markers.toList(),
-                            ),
-                          ],
-                        ),
                 ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               
-              // Affichage des coordonnées texte
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: 20),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.grey[200],
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.grey[400]!),
-                ),
-                child: Column(
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.location_on,
-                          color: Colors.red[700],
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        const Text(
-                          'Coordonnées',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    if (_isLoading)
-                      const CircularProgressIndicator()
-                    else
-                      Text(
+              // Affichage simple des coordonnées sur une ligne
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : Text(
                         _locationMessage,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 12),
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey,
+                        ),
                       ),
-                    const SizedBox(height: 8),
-                    ElevatedButton.icon(
-                      onPressed: _getCurrentLocation,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Actualiser'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.blue,
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
-                  ],
-                ),
               ),
             ],
           ),

@@ -53,15 +53,16 @@
 	<string>smsto</string>
 </array>
 
-<!-- Permissions pour la localisation -->
+<!-- Permissions pour la localisation (iOS 11+) -->
 <key>NSLocationWhenInUseUsageDescription</key>
-<string>Cette application a besoin de votre localisation pour les services d'urgence</string>
-
-<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 <string>Cette application a besoin de votre localisation pour les services d'urgence</string>
 
 <!-- Permission pour l'enregistrement audio (microphone) -->
 <key>NSMicrophoneUsageDescription</key>
 <string>Cette application a besoin d'accéder à votre microphone pour enregistrer un message vocal en cas d'urgence</string>
+
+<!-- Permission pour les contacts (iOS 18+) -->
+<key>NSContactsUsageDescription</key>
+<string>Cette application a besoin d'accéder à vos contacts pour les services d'urgence</string>
 </dict>
 </plist>

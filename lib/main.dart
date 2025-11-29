@@ -6,6 +6,8 @@ import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
+import 'package:flutter_contacts/flutter_contacts.dart';
 
 void main() {
   runApp(const MyApp());
@@ -50,6 +52,9 @@ class _SOSHomePageState extends State<SOSHomePage> {
   // Variables pour les paramètres
   bool _autoSOSEnabled = false;
 
+  // Contacts d'urgence
+  List<EmergencyContact> _emergencyContacts = [];
+
   @override
   void initState() {
     super.initState();
@@ -72,6 +77,15 @@ class _SOSHomePageState extends State<SOSHomePage> {
       setState(() {
         _autoSOSEnabled = prefs.getBool('autoSOSEnabled') ?? false;
       });
+      // Charger les contacts d'urgence
+      final contactsJson = prefs.getStringList('emergencyContacts') ?? [];
+      _emergencyContacts = contactsJson.map((s) {
+        try {
+          return EmergencyContact.fromJson(jsonDecode(s));
+        } catch (_) {
+          return EmergencyContact(name: 'Unknown', phone: '');
+        }
+      }).toList();
       
       // Si auto-SOS est activé, déclencher après 2 secondes
       if (_autoSOSEnabled) {
@@ -93,6 +107,9 @@ class _SOSHomePageState extends State<SOSHomePage> {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('autoSOSEnabled', _autoSOSEnabled);
+      // Sauvegarder les contacts d'urgence
+      final contactsJson = _emergencyContacts.map((c) => jsonEncode(c.toJson())).toList();
+      await prefs.setStringList('emergencyContacts', contactsJson);
     } catch (e) {
       print('Impossible de sauvegarder les paramètres: $e');
       // Sur l'émulateur, on ne peut pas sauvegarder, mais on ne plante pas
@@ -110,7 +127,11 @@ class _SOSHomePageState extends State<SOSHomePage> {
   Future<void> _sendSMS(String locationText) async {
     try {
       String message = 'coucou ca va\n\nPosition:\n$locationText';
+      // Si des contacts d'urgence sont configurés, envoyer au premier contact
       String phoneNumber = '+33781443413';
+      if (_emergencyContacts.isNotEmpty) {
+        phoneNumber = _emergencyContacts.first.phone;
+      }
 
       // Construire l'URI SMS en fonction de la plateforme pour maximiser la compatibilité
       Uri smsUri;
@@ -504,9 +525,16 @@ class _SOSHomePageState extends State<SOSHomePage> {
                     MaterialPageRoute(
                       builder: (context) => SettingsPage(
                         autoSOSEnabled: _autoSOSEnabled,
+                        emergencyContacts: _emergencyContacts,
                         onAutoSOSChanged: (value) {
                           setState(() {
                             _autoSOSEnabled = value;
+                          });
+                          _saveSettings();
+                        },
+                        onEmergencyContactsChanged: (contacts) {
+                          setState(() {
+                            _emergencyContacts = contacts;
                           });
                           _saveSettings();
                         },
@@ -533,11 +561,15 @@ class _SOSHomePageState extends State<SOSHomePage> {
 class SettingsPage extends StatefulWidget {
   final bool autoSOSEnabled;
   final Function(bool) onAutoSOSChanged;
+  final List<EmergencyContact> emergencyContacts;
+  final ValueChanged<List<EmergencyContact>> onEmergencyContactsChanged;
 
   const SettingsPage({
     super.key,
     required this.autoSOSEnabled,
     required this.onAutoSOSChanged,
+    required this.emergencyContacts,
+    required this.onEmergencyContactsChanged,
   });
 
   @override
@@ -609,6 +641,39 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
           ),
           const SizedBox(height: 24),
+          Card(
+            child: ListTile(
+              title: const Text(
+                'Contacts d\'urgence',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              subtitle: const Text(
+                'Ajouter ou modifier les numéros d\'urgence',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              trailing: IconButton(
+                icon: const Icon(Icons.edit_location_alt),
+                onPressed: () async {
+                  // Ouvrir la page de gestion des contacts d'urgence
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => EmergencyContactsPage(
+                        initialContacts: widget.emergencyContacts,
+                        onChanged: (contacts) {
+                          widget.onEmergencyContactsChanged(contacts);
+                        },
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
           Text(
             'À propos',
             style: Theme.of(context).textTheme.titleLarge,
@@ -634,6 +699,210 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                 ],
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Modèle simple pour un contact d'urgence
+class EmergencyContact {
+  final String name;
+  final String phone;
+
+  EmergencyContact({required this.name, required this.phone});
+
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        'phone': phone,
+      };
+
+  factory EmergencyContact.fromJson(Map<String, dynamic> json) => EmergencyContact(
+        name: json['name'] ?? '',
+        phone: json['phone'] ?? '',
+      );
+}
+
+// Page pour gérer les contacts d'urgence
+class EmergencyContactsPage extends StatefulWidget {
+  final List<EmergencyContact> initialContacts;
+  final ValueChanged<List<EmergencyContact>> onChanged;
+
+  const EmergencyContactsPage({super.key, required this.initialContacts, required this.onChanged});
+
+  @override
+  State<EmergencyContactsPage> createState() => _EmergencyContactsPageState();
+}
+
+class _EmergencyContactsPageState extends State<EmergencyContactsPage> {
+  late List<EmergencyContact> _contacts;
+
+  @override
+  void initState() {
+    super.initState();
+    _contacts = List.from(widget.initialContacts);
+  }
+
+  Future<void> _addOrEditContact({EmergencyContact? existing, int? index}) async {
+    final nameController = TextEditingController(text: existing?.name ?? '');
+    final phoneController = TextEditingController(text: existing?.phone ?? '');
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text(existing == null ? 'Ajouter un contact' : 'Modifier le contact'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: 'Nom'),
+              ),
+              TextField(
+                controller: phoneController,
+                decoration: const InputDecoration(labelText: 'Téléphone'),
+                keyboardType: TextInputType.phone,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Annuler')),
+            ElevatedButton(
+              onPressed: () {
+                final name = nameController.text.trim();
+                final phone = phoneController.text.trim();
+                if (phone.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Numéro requis'), backgroundColor: Colors.orange));
+                  return;
+                }
+                final contact = EmergencyContact(name: name.isEmpty ? phone : name, phone: phone);
+                if (index != null) {
+                  _contacts[index] = contact;
+                } else {
+                  _contacts.add(contact);
+                }
+                widget.onChanged(_contacts);
+                Navigator.of(context).pop(true);
+              },
+              child: const Text('Enregistrer'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result == true) setState(() {});
+  }
+
+  Future<void> _pickFromPhoneContacts() async {
+    try {
+      // Demander la permission
+      if (!await FlutterContacts.requestPermission()) {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Permission contacts refusée'), backgroundColor: Colors.orange));
+        return;
+      }
+
+      final contacts = await FlutterContacts.getContacts(withProperties: true);
+      // Afficher une liste de sélection
+      final selected = await showDialog<Contact?>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Choisir un contact'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: contacts.length,
+                itemBuilder: (context, i) {
+                  final c = contacts[i];
+                  final display = c.displayName;
+                  final phone = c.phones.isNotEmpty ? c.phones.first.number : '';
+                  return ListTile(
+                    title: Text(display),
+                    subtitle: Text(phone),
+                    onTap: () => Navigator.of(context).pop(c),
+                  );
+                },
+              ),
+            ),
+            actions: [TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Fermer'))],
+          );
+        },
+      );
+
+      if (selected != null) {
+        final phone = selected.phones.isNotEmpty ? selected.phones.first.number : '';
+        final name = selected.displayName;
+        if (phone.isEmpty) {
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ce contact n\'a pas de numéro'), backgroundColor: Colors.orange));
+          return;
+        }
+        _contacts.add(EmergencyContact(name: name, phone: phone));
+        widget.onChanged(_contacts);
+        setState(() {});
+      }
+    } catch (e) {
+      print('Erreur import contacts: $e');
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Impossible d\'accéder aux contacts'), backgroundColor: Colors.orange));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Contacts d\'urgence'),
+        backgroundColor: Colors.red,
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(12.0),
+            child: Row(
+              children: [
+                ElevatedButton.icon(
+                  onPressed: () => _addOrEditContact(),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Ajouter manuellement'),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                ),
+                const SizedBox(width: 12),
+                ElevatedButton.icon(
+                  onPressed: _pickFromPhoneContacts,
+                  icon: const Icon(Icons.contacts),
+                  label: const Text('Importer depuis le téléphone'),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: ListView.builder(
+              itemCount: _contacts.length,
+              itemBuilder: (context, i) {
+                final c = _contacts[i];
+                return Dismissible(
+                  key: ValueKey(c.phone + i.toString()),
+                  background: Container(color: Colors.red, alignment: Alignment.centerRight, padding: const EdgeInsets.only(right: 20), child: const Icon(Icons.delete, color: Colors.white)),
+                  direction: DismissDirection.endToStart,
+                  onDismissed: (_) {
+                    _contacts.removeAt(i);
+                    widget.onChanged(_contacts);
+                    setState(() {});
+                  },
+                  child: ListTile(
+                    title: Text(c.name),
+                    subtitle: Text(c.phone),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.edit),
+                      onPressed: () => _addOrEditContact(existing: c, index: i),
+                    ),
+                  ),
+                );
+              },
             ),
           ),
         ],

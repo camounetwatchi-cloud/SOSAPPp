@@ -45,5 +45,17 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<!-- Permission pour les appels téléphoniques -->
+<key>LSApplicationQueriesSchemes</key>
+<array>
+    <string>tel</string>
+</array>
+
+<!-- Permissions pour la localisation -->
+<key>NSLocationWhenInUseUsageDescription</key>
+<string>Cette application a besoin de votre localisation pour les services d'urgence</string>
+
+<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+<string>Cette application a besoin de votre localisation pour les services d'urgence</string>
 </dict>
 </plist>

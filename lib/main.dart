@@ -43,15 +43,37 @@ class _SOSHomePageState extends State<SOSHomePage> {
     super.dispose();
   }
 
-  // Fonction pour lancer l'appel d'urgence
-  Future<void> _launchCall() async {
-    final Uri launchUri = Uri(
-      scheme: 'tel',
-      path: '112',
-    );
-
-    if (!await launchUrl(launchUri)) {
-      throw Exception('Impossible de lancer l\'appel vers $launchUri');
+  // Fonction pour envoyer le SMS d'urgence
+  Future<void> _sendSMS(String locationText) async {
+    try {
+      String message = 'coucou ca va\n\nPosition:\n$locationText';
+      String phoneNumber = '0781443413';
+      
+      final Uri smsUri = Uri(
+        scheme: 'sms',
+        path: phoneNumber,
+        queryParameters: {'body': message},
+      );
+      
+      if (await canLaunchUrl(smsUri)) {
+        await launchUrl(smsUri);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('SMS prêt à être envoyé'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        throw Exception('Impossible d\'ouvrir l\'application SMS');
+      }
+    } catch (e) {
+      print('Erreur lors de l\'envoi du SMS: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erreur: ${e.toString()}'),
+          backgroundColor: Colors.orange,
+        ),
+      );
     }
   }
 
@@ -163,18 +185,18 @@ class _SOSHomePageState extends State<SOSHomePage> {
     // Récupérer la localisation
     await _getCurrentLocation();
     
-    // Optionnel: afficher une confirmation avant d'appeler
-    _showCallConfirmation();
+    // Afficher une confirmation avant d'envoyer le SMS
+    _showSMSConfirmation();
   }
 
   // Afficher une boîte de dialogue de confirmation pour l'appel
-  void _showCallConfirmation() {
+  void _showSMSConfirmation() {
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
-          title: const Text('Appel d\'urgence'),
-          content: const Text('Voulez-vous appeler le 112 maintenant ?'),
+          title: const Text('Envoi du SMS d\'urgence'),
+          content: const Text('Voulez-vous envoyer le SMS d\'urgence maintenant ?'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -183,13 +205,13 @@ class _SOSHomePageState extends State<SOSHomePage> {
             ElevatedButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                _launchCall();
+                _sendSMS(_locationMessage);
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red,
                 foregroundColor: Colors.white,
               ),
-              child: const Text('Appeler'),
+              child: const Text('Envoyer'),
             ),
           ],
         );

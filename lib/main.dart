@@ -72,7 +72,7 @@ class _SOSHomePageState extends State<SOSHomePage> {
   Future<void> _sendSMS(String locationText) async {
     try {
       String message = 'coucou ca va\n\nPosition:\n$locationText';
-      String phoneNumber = '0781443413';
+      String phoneNumber = '+33781443413';
 
       // Construire l'URI SMS en fonction de la plateforme pour maximiser la compatibilité
       Uri smsUri;
@@ -99,8 +99,29 @@ class _SOSHomePageState extends State<SOSHomePage> {
         );
       }
 
-      if (await canLaunchUrl(smsUri)) {
-        await launchUrl(smsUri, mode: LaunchMode.externalApplication);
+      // Sur émulateur Android, canLaunchUrl peut retourner false même si l'app SMS existe
+      // On essaie de lancer l'URL directement en tant que fallback
+      bool launched = false;
+      try {
+        if (await canLaunchUrl(smsUri)) {
+          await launchUrl(smsUri, mode: LaunchMode.externalApplication);
+          launched = true;
+        }
+      } catch (e) {
+        print('canLaunchUrl erreur: $e');
+      }
+
+      // Si canLaunchUrl a échoué, essayer quand même de lancer l'URL
+      if (!launched) {
+        try {
+          await launchUrl(smsUri, mode: LaunchMode.externalApplication);
+          launched = true;
+        } catch (e) {
+          print('launchUrl erreur: $e');
+        }
+      }
+
+      if (launched) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('SMS prêt à être envoyé'),
@@ -108,7 +129,7 @@ class _SOSHomePageState extends State<SOSHomePage> {
           ),
         );
       } else {
-        throw Exception('Impossible d\'ouvrir l\'application SMS');
+        throw Exception('Impossible d\'ouvrir l\'application SMS. Vérifiez que l\'app SMS est installée.');
       }
     } catch (e) {
       print('Erreur lors de l\'envoi du SMS: $e');

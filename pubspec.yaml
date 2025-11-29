@@ -21,6 +21,9 @@ dependencies:
   latlong2: ^0.9.1
   shared_preferences: ^2.2.2
   flutter_contacts: ^1.1.9+2
+  record: ^4.4.4
+  path_provider: ^2.1.1
+  permission_handler: ^12.0.1
 
 dev_dependencies:
   flutter_test:

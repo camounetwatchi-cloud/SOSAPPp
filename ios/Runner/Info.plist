@@ -59,5 +59,9 @@
 
 <key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 <string>Cette application a besoin de votre localisation pour les services d'urgence</string>
+
+<!-- Permission pour l'enregistrement audio (microphone) -->
+<key>NSMicrophoneUsageDescription</key>
+<string>Cette application a besoin d'accéder à votre microphone pour enregistrer un message vocal en cas d'urgence</string>
 </dict>
 </plist>

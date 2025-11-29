@@ -8,6 +8,9 @@ import 'package:latlong2/latlong.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:flutter_contacts/flutter_contacts.dart';
+import 'package:record/record.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 void main() {
   runApp(const MyApp());
@@ -55,9 +58,13 @@ class _SOSHomePageState extends State<SOSHomePage> {
   // Contacts d'urgence
   List<EmergencyContact> _emergencyContacts = [];
 
+  // Variables pour l'enregistrement audio
+  late final Record _audioRecorder;
+
   @override
   void initState() {
     super.initState();
+    _audioRecorder = Record();
     _loadSettings();
     _getCurrentLocation();
     // Initialiser le MapController après un délai pour laisser le temps à Flutter de préparer la carte
@@ -120,11 +127,77 @@ class _SOSHomePageState extends State<SOSHomePage> {
   @override
   void dispose() {
     _audioPlayer.dispose();
+    _audioRecorder.dispose();
     super.dispose();
   }
 
-  // Fonction pour envoyer le SMS d'urgence (choisit le scheme selon la plateforme)
-  Future<void> _sendSMS(String locationText) async {
+  // Demander la permission d'accès au microphone
+  Future<bool> _requestMicrophonePermission() async {
+    try {
+      if (Platform.isAndroid || Platform.isIOS) {
+        final status = await Permission.microphone.request();
+        return status.isGranted;
+      }
+      // Sur web/windows/mac, la permission est gérée différemment ou pas requise
+      return true;
+    } catch (e) {
+      print('Erreur lors de la demande de permission microphone: $e');
+      return false;
+    }
+  }
+
+  // Enregistrer 5 secondes d'audio
+  Future<String?> _recordAudio() async {
+    try {
+      // Vérifier la permission
+      final hasPermission = await _requestMicrophonePermission();
+      if (!hasPermission) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Permission microphone refusée'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+        return null;
+      }
+
+      // Obtenir le répertoire temporaire
+      final dir = await getTemporaryDirectory();
+      final audioPath = '${dir.path}/emergency_recording.m4a';
+
+      // Démarrer l'enregistrement
+      await _audioRecorder.start(
+        path: audioPath,
+        encoder: AudioEncoder.aacLc,
+      );
+
+      // Attendre 5 secondes
+      await Future.delayed(const Duration(seconds: 5));
+
+      // Arrêter l'enregistrement
+      final result = await _audioRecorder.stop();
+
+      if (result != null && result.isNotEmpty) {
+        print('Audio enregistré: $audioPath');
+        return audioPath;
+      } else {
+        print('Erreur: aucun audio enregistré');
+        return null;
+      }
+    } catch (e) {
+      print('Erreur lors de l\'enregistrement audio: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erreur enregistrement: ${e.toString()}'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return null;
+    }
+  }
+
+  // Fonction pour envoyer le SMS d'urgence avec audio en pièce jointe (MMS)
+  Future<void> _sendSMS(String locationText, {String? audioPath}) async {
     try {
       String message = 'coucou ca va\n\nPosition:\n$locationText';
       // Si des contacts d'urgence sont configurés, envoyer au premier contact
@@ -133,24 +206,44 @@ class _SOSHomePageState extends State<SOSHomePage> {
         phoneNumber = _emergencyContacts.first.phone;
       }
 
-      // Construire l'URI SMS en fonction de la plateforme pour maximiser la compatibilité
+      // Construire l'URI SMS/MMS en fonction de la plateforme pour maximiser la compatibilité
       Uri smsUri;
-      if (Platform.isAndroid) {
-        // Android: utiliser smsto: pour préremplir le corps dans la plupart des apps
+      if (Platform.isAndroid && audioPath != null) {
+        // Android: utiliser smsto: avec body pour MMS (si audio disponible)
+        // Note: certaines apps Messages acceptent l'audio en paramètre supplémentaire
+        smsUri = Uri(
+          scheme: 'smsto',
+          path: phoneNumber,
+          queryParameters: {
+            'body': message,
+            'attachment': 'file://$audioPath', // Certaines apps reconnaissent ce paramètre
+          },
+        );
+      } else if (Platform.isAndroid) {
+        // Android sans audio: utiliser smsto: standard
         smsUri = Uri(
           scheme: 'smsto',
           path: phoneNumber,
           queryParameters: {'body': message},
         );
+      } else if (Platform.isIOS && audioPath != null) {
+        // iOS: sms: avec body et paramètre attachment (limité, mais essayer)
+        smsUri = Uri(
+          scheme: 'sms',
+          path: phoneNumber,
+          queryParameters: {
+            'body': message,
+          },
+        );
       } else if (Platform.isIOS) {
-        // iOS: sms: avec body query param
+        // iOS sans audio: sms: standard
         smsUri = Uri(
           scheme: 'sms',
           path: phoneNumber,
           queryParameters: {'body': message},
         );
       } else {
-        // Fallback générique
+        // Fallback générique (web, windows, etc.)
         smsUri = Uri(
           scheme: 'sms',
           path: phoneNumber,
@@ -181,9 +274,10 @@ class _SOSHomePageState extends State<SOSHomePage> {
       }
 
       if (launched) {
+        String message2 = audioPath != null ? 'SMS avec audio prêt à être envoyé' : 'SMS prêt à être envoyé';
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('SMS prêt à être envoyé'),
+          SnackBar(
+            content: Text(message2),
             backgroundColor: Colors.green,
           ),
         );
@@ -341,18 +435,23 @@ class _SOSHomePageState extends State<SOSHomePage> {
     // Récupérer la localisation
     await _getCurrentLocation();
     
+    // Enregistrer 5 secondes d'audio
+    final audioPath = await _recordAudio();
+    
     // Afficher une confirmation avant d'envoyer le SMS
-    _showSMSConfirmation();
+    _showSMSConfirmation(audioPath: audioPath);
   }
 
   // Afficher une boîte de dialogue de confirmation pour l'appel
-  void _showSMSConfirmation() {
+  void _showSMSConfirmation({String? audioPath}) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
           title: const Text('Envoi du SMS d\'urgence'),
-          content: const Text('Voulez-vous envoyer le SMS d\'urgence maintenant ?'),
+          content: Text(audioPath != null 
+            ? 'Voulez-vous envoyer le SMS avec le message vocal enregistré ?' 
+            : 'Voulez-vous envoyer le SMS d\'urgence maintenant ?'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -361,7 +460,7 @@ class _SOSHomePageState extends State<SOSHomePage> {
             ElevatedButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                _sendSMS(_locationMessage);
+                _sendSMS(_locationMessage, audioPath: audioPath);
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.red,

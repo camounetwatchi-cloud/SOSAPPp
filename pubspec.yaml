@@ -19,6 +19,7 @@ dependencies:
   audioplayers: ^5.2.1
   flutter_map: ^6.2.1
   latlong2: ^0.9.1
+  shared_preferences: ^2.2.2
 
 dev_dependencies:
   flutter_test:

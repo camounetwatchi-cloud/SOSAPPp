@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   runApp(const MyApp());
@@ -45,21 +46,58 @@ class _SOSHomePageState extends State<SOSHomePage> {
   double? _currentLat;
   double? _currentLng;
   Set<Marker> _markers = {};
-  bool _mapReady = false;
+  
+  // Variables pour les paramètres
+  bool _autoSOSEnabled = false;
 
   @override
   void initState() {
     super.initState();
+    _loadSettings();
     _getCurrentLocation();
     // Initialiser le MapController après un délai pour laisser le temps à Flutter de préparer la carte
     Future.delayed(const Duration(milliseconds: 100), () {
       if (mounted) {
         setState(() {
           _mapController = MapController();
-          _mapReady = true;
         });
       }
     });
+  }
+  
+  // Charger les paramètres depuis SharedPreferences (avec fallback si indisponible)
+  Future<void> _loadSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      setState(() {
+        _autoSOSEnabled = prefs.getBool('autoSOSEnabled') ?? false;
+      });
+      
+      // Si auto-SOS est activé, déclencher après 2 secondes
+      if (_autoSOSEnabled) {
+        Future.delayed(const Duration(seconds: 2), () {
+          if (mounted) {
+            _handleSOSPress();
+          }
+        });
+      }
+    } catch (e) {
+      print('SharedPreferences indisponible (normal sur émulateur): $e');
+      // Sur l'émulateur, les prefs ne sont pas disponibles, on ignore simplement
+      // Le paramètre restera faux (par défaut)
+    }
+  }
+  
+  // Sauvegarder les paramètres dans SharedPreferences (avec fallback si indisponible)
+  Future<void> _saveSettings() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('autoSOSEnabled', _autoSOSEnabled);
+    } catch (e) {
+      print('Impossible de sauvegarder les paramètres: $e');
+      // Sur l'émulateur, on ne peut pas sauvegarder, mais on ne plante pas
+      // Le paramètre sera réinitialisé à chaque redémarrage
+    }
   }
 
   @override
@@ -456,9 +494,149 @@ class _SOSHomePageState extends State<SOSHomePage> {
                         ),
                       ),
               ),
+              const SizedBox(height: 20),
+              
+              // Bouton Paramètres
+              ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => SettingsPage(
+                        autoSOSEnabled: _autoSOSEnabled,
+                        onAutoSOSChanged: (value) {
+                          setState(() {
+                            _autoSOSEnabled = value;
+                          });
+                          _saveSettings();
+                        },
+                      ),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.settings),
+                label: const Text('Paramètres'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.grey[600],
+                  foregroundColor: Colors.white,
+                ),
+              ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+// Page des paramètres
+class SettingsPage extends StatefulWidget {
+  final bool autoSOSEnabled;
+  final Function(bool) onAutoSOSChanged;
+
+  const SettingsPage({
+    super.key,
+    required this.autoSOSEnabled,
+    required this.onAutoSOSChanged,
+  });
+
+  @override
+  State<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends State<SettingsPage> {
+  late bool _localAutoSOSEnabled;
+
+  @override
+  void initState() {
+    super.initState();
+    _localAutoSOSEnabled = widget.autoSOSEnabled;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.red,
+        title: const Text(
+          'Paramètres',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () => Navigator.pop(context),
+        ),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          const SizedBox(height: 16),
+          Card(
+            child: ListTile(
+              title: const Text(
+                'Déclenchement automatique du SOS',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              subtitle: const Text(
+                'Déclenche automatiquement le SOS au démarrage de l\'app',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
+              ),
+              trailing: Switch(
+                value: _localAutoSOSEnabled,
+                activeColor: Colors.red,
+                onChanged: (value) async {
+                  setState(() {
+                    _localAutoSOSEnabled = value;
+                  });
+                  try {
+                    widget.onAutoSOSChanged(value);
+                  } catch (e) {
+                    print('Erreur lors du changement de paramètre: $e');
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Erreur: impossible de sauvegarder le paramètre'),
+                          backgroundColor: Colors.orange,
+                        ),
+                      );
+                    }
+                  }
+                },
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            'À propos',
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          const SizedBox(height: 8),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const [
+                  Text(
+                    'SOS App v1.0.0',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  SizedBox(height: 8),
+                  Text(
+                    'Application d\'urgence pour alerter rapidement en cas de besoin.',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

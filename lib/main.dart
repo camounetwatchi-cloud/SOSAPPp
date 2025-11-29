@@ -45,12 +45,21 @@ class _SOSHomePageState extends State<SOSHomePage> {
   double? _currentLat;
   double? _currentLng;
   Set<Marker> _markers = {};
+  bool _mapReady = false;
 
   @override
   void initState() {
     super.initState();
-    _mapController = MapController();
     _getCurrentLocation();
+    // Initialiser le MapController après un délai pour laisser le temps à Flutter de préparer la carte
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted) {
+        setState(() {
+          _mapController = MapController();
+          _mapReady = true;
+        });
+      }
+    });
   }
 
   @override
@@ -173,8 +182,7 @@ class _SOSHomePageState extends State<SOSHomePage> {
         _currentLng = position.longitude;
         _locationMessage = 
             'Latitude: ${position.latitude.toStringAsFixed(6)}\n'
-            'Longitude: ${position.longitude.toStringAsFixed(6)}\n'
-            'Précision: ${position.accuracy.toStringAsFixed(1)}m';
+            'Longitude: ${position.longitude.toStringAsFixed(6)}';
         
         // Créer un marker pour la position actuelle
         _markers.clear();
@@ -196,13 +204,15 @@ class _SOSHomePageState extends State<SOSHomePage> {
           ),
         );
         
-        // Centrer la carte sur la position
-        if (_mapController != null) {
-          _mapController!.move(
-            LatLng(position.latitude, position.longitude),
-            15.0,
-          );
-        }
+        // Centrer la carte sur la position (avec délai si nécessaire)
+        Future.delayed(const Duration(milliseconds: 200), () {
+          if (_mapController != null && mounted) {
+            _mapController!.move(
+              LatLng(position.latitude, position.longitude),
+              15.0,
+            );
+          }
+        });
         
         _isLoading = false;
       });

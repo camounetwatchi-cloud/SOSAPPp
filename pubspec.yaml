@@ -17,6 +17,8 @@ dependencies:
   # AJOUT : Packages pour la localisation et le son
   geolocator: ^10.1.0
   audioplayers: ^5.2.1
+  flutter_map: ^6.2.1
+  latlong2: ^0.9.1
 
 dev_dependencies:
   flutter_test:

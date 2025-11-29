@@ -1,7 +1,10 @@
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 
 void main() {
   runApp(const MyApp());
@@ -36,6 +39,19 @@ class _SOSHomePageState extends State<SOSHomePage> {
   bool _isLoading = false;
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isPlayingAlarm = false;
+  
+  // Variables pour la carte
+  late MapController _mapController;
+  double? _currentLat;
+  double? _currentLng;
+  Set<Marker> _markers = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _mapController = MapController();
+    _getCurrentLocation();
+  }
 
   @override
   void dispose() {
@@ -43,20 +59,39 @@ class _SOSHomePageState extends State<SOSHomePage> {
     super.dispose();
   }
 
-  // Fonction pour envoyer le SMS d'urgence
+  // Fonction pour envoyer le SMS d'urgence (choisit le scheme selon la plateforme)
   Future<void> _sendSMS(String locationText) async {
     try {
       String message = 'coucou ca va\n\nPosition:\n$locationText';
       String phoneNumber = '0781443413';
-      
-      final Uri smsUri = Uri(
-        scheme: 'sms',
-        path: phoneNumber,
-        queryParameters: {'body': message},
-      );
-      
+
+      // Construire l'URI SMS en fonction de la plateforme pour maximiser la compatibilité
+      Uri smsUri;
+      if (Platform.isAndroid) {
+        // Android: utiliser smsto: pour préremplir le corps dans la plupart des apps
+        smsUri = Uri(
+          scheme: 'smsto',
+          path: phoneNumber,
+          queryParameters: {'body': message},
+        );
+      } else if (Platform.isIOS) {
+        // iOS: sms: avec body query param
+        smsUri = Uri(
+          scheme: 'sms',
+          path: phoneNumber,
+          queryParameters: {'body': message},
+        );
+      } else {
+        // Fallback générique
+        smsUri = Uri(
+          scheme: 'sms',
+          path: phoneNumber,
+          queryParameters: {'body': message},
+        );
+      }
+
       if (await canLaunchUrl(smsUri)) {
-        await launchUrl(smsUri);
+        await launchUrl(smsUri, mode: LaunchMode.externalApplication);
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('SMS prêt à être envoyé'),
@@ -134,10 +169,39 @@ class _SOSHomePageState extends State<SOSHomePage> {
       );
 
       setState(() {
+        _currentLat = position.latitude;
+        _currentLng = position.longitude;
         _locationMessage = 
             'Latitude: ${position.latitude.toStringAsFixed(6)}\n'
             'Longitude: ${position.longitude.toStringAsFixed(6)}\n'
             'Précision: ${position.accuracy.toStringAsFixed(1)}m';
+        
+        // Créer un marker pour la position actuelle
+        _markers.clear();
+        _markers.add(
+          Marker(
+            point: LatLng(position.latitude, position.longitude),
+            width: 80.0,
+            height: 80.0,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: const [
+                Icon(
+                  Icons.location_on,
+                  color: Colors.red,
+                  size: 40,
+                ),
+              ],
+            ),
+          ),
+        );
+        
+        // Centrer la carte sur la position
+        _mapController.move(
+          LatLng(position.latitude, position.longitude),
+          15.0,
+        );
+        
         _isLoading = false;
       });
     } catch (e) {
@@ -289,13 +353,65 @@ class _SOSHomePageState extends State<SOSHomePage> {
 
               const SizedBox(height: 20),
 
-              // Zone d'affichage de la localisation
+              // Zone d'affichage de la carte avec la localisation
               Container(
                 margin: const EdgeInsets.symmetric(horizontal: 20),
-                padding: const EdgeInsets.all(16),
+                height: 300,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.red, width: 2),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 8,
+                      offset: Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(10),
+                  child: _currentLat == null || _currentLng == null
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              if (_isLoading)
+                                const CircularProgressIndicator()
+                              else
+                                const Text(
+                                  'Impossible de charger la carte',
+                                  style: TextStyle(fontSize: 14),
+                                ),
+                            ],
+                          ),
+                        )
+                      : FlutterMap(
+                          mapController: _mapController,
+                          options: MapOptions(
+                            center: LatLng(_currentLat!, _currentLng!),
+                            zoom: 15.0,
+                          ),
+                          children: [
+                            TileLayer(
+                              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                              userAgentPackageName: 'com.example.sos_app',
+                            ),
+                            MarkerLayer(
+                              markers: _markers.toList(),
+                            ),
+                          ],
+                        ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              
+              // Affichage des coordonnées texte
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: Colors.grey[200],
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: Colors.grey[400]!),
                 ),
                 child: Column(
@@ -306,28 +422,28 @@ class _SOSHomePageState extends State<SOSHomePage> {
                         Icon(
                           Icons.location_on,
                           color: Colors.red[700],
-                          size: 24,
+                          size: 20,
                         ),
                         const SizedBox(width: 8),
                         const Text(
-                          'Ma position',
+                          'Coordonnées',
                           style: TextStyle(
-                            fontSize: 18,
+                            fontSize: 16,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
                     if (_isLoading)
                       const CircularProgressIndicator()
                     else
                       Text(
                         _locationMessage,
                         textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 14),
+                        style: const TextStyle(fontSize: 12),
                       ),
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
                     ElevatedButton.icon(
                       onPressed: _getCurrentLocation,
                       icon: const Icon(Icons.refresh),
